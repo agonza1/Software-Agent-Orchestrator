@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Agents at work · Software Agent Orchestrator</title>
+  <link rel="stylesheet" href="./demo.css">
+  <script type="module" src="./demo.mjs"></script>
+</head>
+<body>
+  <header class="toolbar">
+    <div><strong>Software Agent Orchestrator</strong><span class="muted"> / browser demo</span></div>
+    <div class="controls"><label>Layout <select id="layout"><option value="split">Side by side</option><option value="stack">Top / bottom</option></select></label><button id="reset">Reset</button></div>
+  </header>
+  <main id="workspace">
+    <section class="builder" aria-label="Agent workboard">
+      <header><div><p class="eyebrow">01 / BUILD</p><h1>Agent workboard</h1></div><span id="mode" class="tag">Live · local</span></header>
+      <div class="model"><button id="load">Load Gemma E4B</button><span id="model-status" role="status">~3 GB download · WebGPU required</span></div>
+      <nav id="stages" aria-label="Task lifecycle"></nav>
+      <article class="task">
+        <p class="eyebrow">ONE TASK / EXPENSE POLICY</p>
+        <h2>Route large expenses to a manager</h2>
+        <label class="threshold">Approval threshold <span>$ <input id="threshold" type="number" min="0.01" max="100000" step="0.01" value="500" required></span></label>
+        <p class="muted">Above the threshold: manager review + a reason. At or below: eligible. Paid expenses stay paid.</p>
+        <p class="muted">Main plans → Coder implements → QA checks. Same model, separate contexts; at most two repairs.</p>
+        <div class="controls"><button id="plan" disabled>1. Plan task</button><button id="run" disabled>2. Ready & run</button><button id="stop" disabled>Stop</button></div>
+        <pre id="plan-text">Choose a threshold, load the model, then ask Main for a plan.</pre>
+      </article>
+      <p id="status" role="status" aria-live="polite">Backlog · no execution authorized</p>
+      <details id="evidence"><summary>Code & test evidence</summary><p id="hash" class="muted"></p><pre id="code"></pre><ul id="tests"></ul></details>
+      <div class="controls footer"><button id="accept" disabled>Apply tested change</button><button id="replay" disabled>Replay last run</button></div>
+      <details><summary>Activity</summary><ol id="activity"></ol></details>
+      <p class="fine">Browser-only example. No credentials, backend, repository writes or real payments. Native Codex execution is unchanged; Claude integration is not included.</p>
+    </section>
+    <section class="spend" aria-label="Expense application">
+      <header><div><p class="eyebrow">02 / THE APPLICATION</p><h2>Spend<span class="brand-dot">.</span></h2></div><span class="company">Acme Studio · demo data</span></header>
+      <div class="app-heading"><div><p class="eyebrow">FINANCE / EXPENSES</p><h1>Expense inbox</h1></div><label class="preview-label">Version <select id="preview"><option value="accepted">Accepted</option><option value="candidate">Candidate</option></select></label></div>
+      <div class="stats"><div><span>Submitted</span><strong id="total"></strong></div><div><span>Needs review</span><strong id="review-count">0</strong></div><div><span>Paid</span><strong>$2,500</strong></div></div>
+      <label class="filter"><input id="filter" type="checkbox"> Show only manager review</label>
+      <div class="table-wrap"><table><thead><tr><th>Merchant / employee</th><th>Amount</th><th>Status</th></tr></thead><tbody id="expenses"></tbody></table></div>
+      <aside id="expense-detail" aria-live="polite">Select an expense to inspect its receipt and review reason.</aside>
+      <p class="fine" id="preview-note">Accepted version · no approval threshold yet.</p>
+    </section>
+  </main>
+</body>
+</html>
