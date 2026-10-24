@@ -18,11 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
-      - name: Stage only the public demo
-        run: |
-          mkdir _site
-          cp public/demo.html _site/index.html
-          cp public/demo*.mjs public/demo.css public/workboard-model.js _site/
+      - name: Stage demo and shared self-hosted UI
+        run: python3 scripts/build-demo.py
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

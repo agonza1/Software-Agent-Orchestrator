@@ -1,142 +1,90 @@
-import { columns, labels } from './workboard-model.js';
-import { BASE, expenses, money, thresholdCents, objective, runTask, canAccept } from './demo-core.mjs';
-const $ = id => document.getElementById(id);
-const node = (tag, text) => { const el = document.createElement(tag); el.textContent = text; return el; };
-const baselineRows = () => expenses.map(e => ({ value: { status: e.status === 'paid' ? 'paid' : 'eligible', reason: '' } }));
-let worker, ready = false, busy = false, serial = 0, task, receipt, controller, recorded = false;
-let accepted = BASE, acceptedRows = baselineRows(), events = [], stage = 'backlog', selected = 0;
-const pending = new Map(), STORAGE = 'sao-demo-last-run-v1';
-function stopWorker(message) {
-  worker?.terminate(); worker = null; ready = false;
-  for (const p of pending.values()) { clearTimeout(p.timer); p.reject(Error(message)); }
+import { expenses, money, thresholdCents } from './demo-core.mjs';
+import { DemoStore, example } from './demo-store.mjs';
+const $ = id => document.getElementById(id), node = (tag, text) => { const e = document.createElement(tag); e.textContent = text; return e; };
+let worker, serial = 0, loading = false, selectedTask, selectedExpense = 0, playback;
+const pending = new Map();
+const notice = text => { $('notice').textContent = text; };
+function stopWorker() {
+  worker?.terminate(); worker = null;
+  for (const p of pending.values()) { clearTimeout(p.timer); p.reject(Error('Worker stopped. No new change was applied.')); }
   pending.clear(); $('model-status').textContent = 'Model unloaded · cached download retained';
 }
 function rpc(action, ...args) {
   if (!worker) {
     worker = new Worker(new URL('./demo-worker.mjs', import.meta.url), { type: 'module' });
-    worker.onerror = () => stopWorker('Browser runtime failed. Reload the model to retry.');
+    worker.onerror = () => { stopWorker(); runtime.setReady(false); };
     worker.onmessage = ({ data }) => {
       const p = pending.get(data.id); if (!p) return;
       if (data.progress) { $('model-status').textContent = data.progress; return; }
-      pending.delete(data.id); clearTimeout(p.timer);
-      data.error ? p.reject(Error(data.error)) : p.resolve(data.value);
+      pending.delete(data.id); clearTimeout(p.timer); data.error ? p.reject(Error(data.error)) : p.resolve(data.value);
     };
   }
   return new Promise((resolve, reject) => {
-    const id = ++serial, timer = setTimeout(() => stopWorker('Operation timed out. Nothing was applied.'), action === 'load' ? 900000 : 180000);
+    const id = ++serial, timer = setTimeout(() => { stopWorker(); runtime.setReady(false); }, action === 'load' ? 900000 : 180000);
     pending.set(id, { resolve, reject, timer }); worker.postMessage({ id, action, args });
   });
 }
-function remember() {
-  try { localStorage.setItem(STORAGE, JSON.stringify({ task, events })); }
-  catch { $('status').textContent += ' · Run could not be saved locally.'; }
-}
-function saved() { try { return JSON.parse(localStorage.getItem(STORAGE)); } catch { return null; } }
-function controls() {
-  $('load').disabled = busy || ready;
-  $('threshold').disabled = busy || recorded;
-  $('plan').disabled = busy || !ready || recorded;
-  $('run').disabled = busy || !ready || !task || stage !== 'backlog' || recorded;
-  $('accept').disabled = busy || !receipt?.approved || stage !== 'review' || recorded;
-  $('stop').disabled = !busy; $('reset').disabled = busy;
-  $('replay').disabled = busy || !saved()?.events?.length;
-  $('mode').textContent = recorded ? 'Recorded · local run' : 'Live · local';
-  $('stages').replaceChildren(...columns.filter(c => c !== 'cancelled').map(c => {
-    const el = node('span', labels[c]); if (c === stage) el.setAttribute('aria-current', 'step'); return el;
-  }));
-}
-function renderApp() {
-  const candidate = $('preview').value === 'candidate';
-  const rows = candidate && receipt ? receipt.rows : acceptedRows;
+let storage; try { storage = sessionStorage; } catch { /* Workspace still works without persistence. */ }
+const runtime = new DemoStore({ storage, ask: (role, prompt) => rpc('ask', role, prompt), evaluate: (code, inputs) => rpc('evaluate', code, inputs), stop: stopWorker, changed: render });
+function chosenRun() { const runs = runtime.snapshot().runs; return runs.filter(r => r.task_id === selectedTask).at(-1) || runs.at(-1); }
+function render() {
+  if (runtime.busy?.run) selectedTask = runtime.busy.run.task_id;
+  const data = runtime.snapshot(), run = chosenRun(), receipt = run?.receipt;
+  $('load').disabled = loading || runtime.ready || runtime.readOnly; $('stop').disabled = !loading && !runtime.busy;
+  $('reset').disabled = Boolean(runtime.busy) || loading; $('example').disabled = runtime.readOnly;
+  $('replay').disabled = Boolean(runtime.busy) || loading || !data.runs.some(r => r.timeline?.length);
+  $('replay').textContent = runtime.readOnly ? 'Exit replay' : 'Replay last run'; $('mode').textContent = runtime.readOnly ? 'Recorded · read-only' : 'Live · browser-local';
+  const candidate = $('preview').value === 'candidate', rows = candidate && receipt ? receipt.rows : data.accepted.rows;
   $('total').textContent = money(expenses.filter(e => e.status !== 'paid').reduce((sum, e) => sum + e.amountCents, 0));
-  $('review-count').textContent = rows.filter(r => r.value?.status === 'review').length;
-  $('expenses').replaceChildren();
+  $('review-count').textContent = rows.filter(r => r.value?.status === 'review').length; $('expenses').replaceChildren();
   expenses.forEach((expense, i) => {
-    const value = rows[i]?.value;
-    if ($('filter').checked && value?.status !== 'review') return;
-    const tr = document.createElement('tr'), cell = document.createElement('td');
-    const button = node('button', expense.merchant); button.onclick = () => { selected = i; renderApp(); };
-    const employee = node('span', expense.employee); employee.className = 'employee'; button.append(employee); cell.append(button);
-    const status = value?.status ?? 'error', pill = node('span', { eligible: 'Eligible', review: 'Manager review', paid: 'Paid', error: 'Needs fix' }[status] ?? 'Invalid');
-    pill.className = `pill ${['review', 'error'].includes(status) ? status : ''}`;
-    const statusCell = document.createElement('td'); statusCell.append(pill);
-    tr.append(cell, node('td', money(expense.amountCents)), statusCell); $('expenses').append(tr);
+    const status = rows[i]?.value?.status || 'error'; if ($('filter').checked && status !== 'review') return;
+    const tr = node('tr', ''), cell = node('td', ''), button = node('button', expense.merchant), employee = node('span', expense.employee);
+    employee.className = 'employee'; button.append(employee); button.onclick = () => { selectedExpense = i; render(); }; cell.append(button);
+    const pill = node('span', { eligible: 'Eligible', review: 'Manager review', paid: 'Paid', error: 'Needs fix' }[status] || 'Invalid'); pill.className = `pill ${status === 'review' ? 'review' : status === 'error' ? 'error' : ''}`;
+    const badge = node('td', ''); badge.append(pill); tr.append(cell, node('td', money(expense.amountCents)), badge); $('expenses').append(tr);
   });
-  const e = expenses[selected], row = rows[selected];
+  const e = expenses[selectedExpense], row = rows[selectedExpense];
   $('expense-detail').textContent = `${e.merchant} · ${e.receipt ? 'Receipt attached' : 'Receipt missing'}. ${row?.value?.reason || row?.error || 'No manager review required.'}`;
-  $('preview-note').textContent = recorded ? 'Recorded result · not a new execution.' : candidate ? (receipt ? 'Candidate only · not applied to the accepted version.' : 'No candidate yet · showing accepted version.') : 'Accepted version · local demo only.';
+  $('preview-note').textContent = `${runtime.readOnly ? 'Recorded result' : candidate && receipt ? 'Candidate only' : `Accepted version ${data.accepted.version}`} · browser-local; no real financial actions.`;
+  $('hash').textContent = receipt ? `Task ${run.task_id.slice(0, 8)} · revision ${run.task_revision} · ${receipt.hash.slice(0, 12)} · QA ${receipt.qa_status}` : 'Select a task with executed checks.';
+  $('before').textContent = run?.spec.base || ''; $('code').textContent = receipt?.source || run?.source || '';
+  $('tests').replaceChildren(...(receipt?.tests || []).map(t => { const li = node('li', `${t.pass ? 'PASS' : 'FAIL'} · ${money(t.input.amountCents)} ${t.input.status} → ${t.actual} (expected ${t.expected})`); li.className = t.pass ? 'pass' : 'fail'; return li; }));
+  if (runtime.storageWarning) notice(runtime.storageWarning);
 }
-function show(event, save = true) {
-  if (save) events.push(event);
-  if (event.stage) stage = event.stage;
-  if (event.source) $('code').textContent = event.source;
-  if (event.receipt) {
-    receipt = event.receipt; $('code').textContent = receipt.source;
-    $('hash').textContent = `Tested candidate ${receipt.hash.slice(0, 12)} · attempt ${receipt.attempt + 1}/3`;
-    $('tests').replaceChildren(...receipt.tests.map(t => {
-      const li = node('li', `${t.pass ? 'PASS' : 'FAIL'} · ${money(t.input.amountCents)} ${t.input.status} → ${t.actual} (expected ${t.expected})${t.error ? ` · ${t.error}` : ''}`);
-      li.className = t.pass ? 'pass' : 'fail'; return li;
-    }));
-    $('preview').value = 'candidate'; $('evidence').open = true; renderApp();
+window.demoWorkbench = { runtime, notice, example: () => example(thresholdCents($('threshold').value)), select: (key, candidate) => { selectedTask = key; if (candidate) { $('preview').value = 'candidate'; $('evidence').open = true; } render(); } };
+$('board').src = './workboard.html';
+$('load').onclick = async () => {
+  loading = true; render();
+  try { await rpc('load'); runtime.setReady(true); $('model-status').textContent = 'Gemma E4B ready · shared by Main, Coder and QA'; }
+  catch (error) { notice(error.message); }
+  finally { loading = false; render(); }
+};
+$('stop').onclick = () => { runtime.cancel(); stopWorker(); runtime.setReady(false); };
+$('example').onclick = () => { try { $('board').contentWindow.useExample(window.demoWorkbench.example()); } catch (error) { notice(error.message); } };
+$('preview').onchange = $('filter').onchange = render;
+$('reset').onclick = () => { playback?.abort(); runtime.reset(); selectedTask = null; $('preview').value = 'accepted'; $('board').src = './workboard.html'; };
+$('export').onclick = () => {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(runtime.state, null, 2)], { type: 'application/json' })), link = node('a', '');
+  link.href = url; link.download = 'agent-workspace.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+$('replay').onclick = async () => {
+  if (runtime.readOnly) { playback?.abort(); runtime.endReplay(); return; }
+  const run = runtime.state.runs.filter(r => r.timeline?.length).at(-1); if (!run) return;
+  playback = new AbortController(); const signal = playback.signal, events = runtime.replay(run.id), view = runtime.view.runs.find(r => r.id === run.id), task = runtime.view.tasks.find(t => t.id === run.task_id);
+  selectedTask = task.id; $('preview').value = 'candidate';
+  for (const event of events) {
+    if (signal.aborted) return;
+    view.status = 'running'; view.stage = event.phase === 'Coder' ? 'coder' : 'qa'; task.status = 'active';
+    if (event.receipt) view.receipt = event.receipt;
+    runtime.signal(); await new Promise(resolve => setTimeout(resolve, 450));
   }
-  if (recorded && event.stage === 'done' && receipt) {
-    accepted = receipt.source; acceptedRows = receipt.rows; $('preview').value = 'accepted'; renderApp();
-  }
-  const text = `${event.phase ?? labels[stage]} · ${event.message}`;
-  $('status').textContent = text; $('activity').append(node('li', text)); controls();
-}
-async function operation(fn) {
-  busy = true; controller = new AbortController(); controls();
-  try { await fn(controller.signal); }
-  catch (error) { show({ message: error.message, phase: 'Needs attention' }); if (task && !recorded) remember(); receipt = null; renderApp(); }
-  finally { busy = false; controls(); }
-}
-function clearTask() {
-  task = null; receipt = null; events = []; stage = 'backlog'; recorded = false;
-  $('plan-text').textContent = 'Choose a threshold, then ask Main for a plan.';
-  $('code').textContent = accepted; $('hash').textContent = '';
-  $('tests').replaceChildren(); $('activity').replaceChildren(); $('evidence').open = false;
-  $('status').textContent = 'Backlog · no execution authorized'; $('preview').value = 'accepted';
-  controls(); renderApp();
-}
-$('load').onclick = () => operation(async () => {
-  await rpc('load'); ready = true; $('model-status').textContent = 'Gemma E4B ready · one model, three roles';
-});
-$('plan').onclick = () => operation(async signal => {
-  const threshold = thresholdCents($('threshold').value); clearTask();
-  show({ phase: 'Main', message: 'Planning only; execution still requires Ready & run' });
-  const plan = await rpc('ask', 'Main', `${objective(threshold)}\nThe app is an expense inbox. Only evaluateExpense(expense) may change. Propose at most three short implementation/verification steps. No code. The existing paid state must be preserved.`);
-  signal.throwIfAborted(); if (!plan.trim()) throw Error('Main returned an empty plan.');
-  task = Object.freeze({ id: crypto.randomUUID(), threshold, plan: plan.slice(0, 2000), base: accepted, baseRows: acceptedRows });
-  $('plan-text').textContent = task.plan; show({ phase: 'Main', message: 'Plan ready in Backlog · review it before authorizing execution' });
-});
-$('run').onclick = () => operation(async signal => {
-  show({ stage: 'ready', message: 'Execution explicitly authorized for this task revision' });
-  show({ stage: 'active', message: 'Starting Coder → independent QA' });
-  try {
-    receipt = await runTask(task, (role, prompt) => rpc('ask', role, prompt), (code, inputs) => rpc('evaluate', code, inputs), show, signal);
-    signal.throwIfAborted(); show({ stage: 'review', message: 'Checks passed · human acceptance required' });
-  } finally { remember(); }
-});
-$('accept').onclick = () => operation(async signal => {
-  if (recorded || stage !== 'review' || !await canAccept(task, receipt)) throw Error('Candidate no longer matches its tested task revision.');
-  signal.throwIfAborted(); accepted = receipt.source; acceptedRows = receipt.rows;
-  show({ stage: 'done', message: 'Tested candidate applied locally · no GitHub publication' });
-  $('preview').value = 'accepted'; renderApp(); remember();
-});
-$('stop').onclick = () => { controller?.abort(Error('Stopped by user. Nothing new was applied.')); stopWorker('Stopped by user.'); };
-$('reset').onclick = () => { accepted = BASE; acceptedRows = baselineRows(); $('threshold').value = '500'; $('filter').checked = false; clearTask(); };
-$('threshold').oninput = clearTask;
-$('preview').onchange = $('filter').onchange = renderApp;
-$('layout').onchange = () => $('workspace').classList.toggle('stack', $('layout').value === 'stack');
-$('replay').onclick = () => operation(async signal => {
-  const record = saved();
-  if (!record?.task || !Array.isArray(record.events) || record.events.length > 40) throw Error('No valid saved run.');
-  clearTask(); recorded = true; task = record.task; accepted = task.base; acceptedRows = task.baseRows; renderApp();
-  $('plan-text').textContent = task.plan; controls();
-  for (const event of record.events) {
-    await new Promise(resolve => setTimeout(resolve, 450)); signal.throwIfAborted(); show(event, false);
-  }
-  renderApp();
-});
-clearTask();
+  if (!signal.aborted) { Object.assign(view, structuredClone(run)); task.status = run.applied_at ? 'done' : 'review'; runtime.signal(); }
+};
+$('layout').onchange = () => { const stack = $('layout').value === 'stack'; $('workspace').classList.toggle('stack', stack); $('workspace').style.cssText = ''; $('divider').setAttribute('aria-orientation', stack ? 'horizontal' : 'vertical'); };
+let size = 60;
+function resize(value) { size = Math.max(35, Math.min(75, value)); const stack = $('layout').value === 'stack'; $('workspace').style[stack ? 'gridTemplateRows' : 'gridTemplateColumns'] = stack ? `${size * 10}px 6px minmax(580px,auto)` : `minmax(440px,${size}fr) 6px minmax(340px,${100 - size}fr)`; $('divider').setAttribute('aria-valuenow', String(Math.round(size))); }
+$('divider').onpointerdown = event => { $('divider').setPointerCapture(event.pointerId); $('divider').onpointermove = e => { const rect = $('workspace').getBoundingClientRect(); resize($('layout').value === 'stack' ? (e.clientY - rect.top) / 10 : (e.clientX - rect.left) / rect.width * 100); }; };
+$('divider').onpointerup = $('divider').onpointercancel = () => { $('divider').onpointermove = null; };
+$('divider').onkeydown = event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) { event.preventDefault(); resize(size + (['ArrowLeft', 'ArrowUp'].includes(event.key) ? -2 : 2)); } };
+render();

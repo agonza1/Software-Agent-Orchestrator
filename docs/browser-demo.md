@@ -1,57 +1,79 @@
-# Browser demo: agents at work
+# Browser demo: the real workboard UI, local Gemma execution
 
-A small, no-build example of Main → Coder → independent QA → up to two repairs →
-human acceptance. A dark workboard sits beside a light expense inbox; switch to
-Top / bottom without losing the run. Change the approval threshold, plan, review
-the plan, choose **Ready & run**, inspect the candidate/tests, then **Apply tested
-change**. Each agent uses a separate conversation on one local Gemma 4 E4B engine.
+The demo packages the **same `index.html`, `styles.css`, `workboard.js` and
+`workboard-model.js` used by the self-hosted app**. A small frame-local transport
+adapts its API to a browser workspace. Native UI/Rust files are unchanged; there
+is no second simplified board to maintain. The dark official workboard and light
+expense application remain visually separate. Both layouts are resizable.
+
+## What works
+
+- **Work:** full task editor, labels/types/owners/priorities, dependencies,
+  search/filters, drag Backlog ↔ Ready, details/history, archive/restore/reopen,
+  and manual task acceptance.
+- **Main:** Gemma generates editable proposals; accept selected proposals with
+  dependencies into Backlog. Planning never starts engineering work.
+- **System:** add/edit/disable agents, role instructions, default/assigned agents,
+  and activity. All agents share Gemma 4 E4B; settings are pinned per run.
+- **Execution:** Ready pickup, priority ordering, dependency gates, queue/global
+  pause, real Coder/QA calls, protected executed tests, two-repair limit, Stop,
+  exact-candidate acceptance, and explicit QA-skip policy (checks still execute).
+- **Attention:** blockers and review decisions. Delivery choices mean apply
+  locally after checks or wait for human acceptance, never a fabricated PR/merge.
+- Candidate/accepted expense previews, before/after source, test evidence,
+  workspace export and clearly labeled read-only replay of an actual local run.
+
+This is **UI/workflow parity for the browser-supported subset**, not the Rust
+coordinator or a native host in the browser. Only `demo/expense-inbox` and the
+`evaluateExpense(expense)` threshold contract execute. Other tasks can be organized
+or tracked manually, but arbitrary repositories/web research need self-hosting.
+Repository checkout/preparation, GitHub publication, credentials, Codex/Claude
+execution and multi-repository parallel workers are not simulated as successes.
+Host-only operations are disabled or return an explicit explanation.
 
 ## Run / publish
 
 ```sh
-python3 -m http.server 8000 --directory public
-# Open http://localhost:8000/demo.html
-node --test tests/demo.test.mjs
+python3 scripts/build-demo.py /tmp/sao-browser-demo
+python3 -m http.server 8000 --directory /tmp/sao-browser-demo
+# Open http://localhost:8000
+node --test tests/demo*.test.mjs
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_demo_package.py'
 python3 scripts/check-public.py
 ```
 
 After merge, choose **Settings → Pages → Source: GitHub Actions**, then manually
-run **Publish browser demo** on `main`. It publishes only the demo files and shared
-workboard display helpers. It does not deploy the native server, run paid agents,
-add CI checks, or publish from a PR. No npm build or API key is required.
+run **Publish browser demo** on `main`. Packaging copies existing UI assets and
+changes only the staged entry's loader/relative URLs. No npm build, new dependency,
+CI, PR deployment or backend is introduced.
 
-Use a desktop browser with WebGPU and enough GPU/RAM and browser storage. **Load
-Gemma E4B** explicitly downloads about 3 GB from Hugging Face; weights are cached
-in the browser, not GitHub. Cache eviction/quota limits and GPU compatibility can
-prevent loading. Reset keeps the model; Stop terminates the worker (reload from
-cache afterward). The runtime and model revision are pinned. Network access is
-still needed for CDN runtime assets; this is not a guaranteed offline app.
+Load Gemma, inspect the seeded Backlog task, then **Mark ready**. It waits in
+Review for **Apply tested change locally**. Alternatively choose a threshold and
+**Plan this example** to prefill the real Main form. Context contains the explicit
+`demo.thresholdCents=<integer>` test contract; keep it aligned with the task's
+objective/criteria. Unrelated requests must not be represented as verified by
+these expense tests. Choose Manual for non-executable workshop tasks.
 
-## Scope and trust boundary
+## Persistence and trust
 
-Only `evaluateExpense(expense)` is editable. The audience can vary the threshold;
-this is not an arbitrary app builder. Integer-cent boundary/paid-state tests and
-visible-row checks are host-owned. QA proposes extra inputs, not expected results.
-Generated JavaScript executes in QuickJS/WASM with CPU/memory limits and no exposed
-host APIs; the main page only renders text/validated results. Approval is bound to
-the task revision, plan, threshold and exact source hash. Same-model QA is role
-separation, not an independent model or proof of financial correctness.
+The workspace survives reload in **this tab's session storage**, not a shared host
+database. Export before closing the tab. Separate tabs do not overwrite each
+other. Reload fences interrupted runs; no invisible retry occurs. Reset restores
+the seed workspace but retains the model download. Stop unloads the worker;
+reloading uses cached weights when available. Pausing only stops new launches.
 
-The demo reuses workboard state names, **not the Rust coordinator**. It mirrors a
-bounded subset of its authorization/QA/repair rules, has no native sessions, repo
-queues, PRs or merge authority, and cannot connect to a local Codex installation.
-The installed Codex path is untouched; a Claude adapter is a separate feature.
-Only the latest actual local run is saved for clearly labeled replay; replay cannot
-apply changes. Reset restores the seeded app. No fabricated/pre-recorded AI run ships.
+Generated code stays inside bounded QuickJS/WASM with no exposed host APIs.
+Expected results are computed outside it; QA can propose inputs, not edit the
+oracle. Same-model QA is role separation, not independent training or proof of
+financial correctness. Acceptance is bound to the specification revision, exact
+source, and accepted-app version; stale results require a new run. API interception
+is scoped to the demo frame, never the installed application's real session.
 
-## Validation
+## Validation still required
 
-The Node tests use deterministic role fixtures and execute fixture JavaScript;
-they do not establish Gemma quality or hardware compatibility. Before presenting,
-run live E4B at two thresholds on the target laptop, check cached reload, Stop,
-layout switching, a failing repair, acceptance and replay. Do not label this GPU
-validation complete until performed on a compatible device.
-
-References: [LiteRT-LM Web API](https://developers.google.com/edge/litert-lm/js),
-[E4B artifact](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm),
-[QuickJS](https://github.com/justjake/quickjs-emscripten).
+Use a WebGPU-capable desktop with sufficient GPU/RAM/storage for the roughly 3 GB
+E4B download. Node tests use deterministic role fixtures and execute fixture code;
+they do not establish model quality or real GPU/CDN/QuickJS integration. The Python
+checks verify packaging contracts using fixture assets, not rendered UI parity.
+Before presenting, test the actual shared UI and a live E4B plan/code/QA loop on
+the target laptop, including reload, Stop, repair, acceptance and replay.

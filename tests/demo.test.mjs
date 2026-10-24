@@ -80,11 +80,12 @@ test('cancellation after a model response does not produce test evidence or appr
   await assert.rejects(run(async () => { controller.abort(Error('Stopped')); return good; }, e => events.push(e), controller.signal), /Stopped/);
   assert.equal(events.length, 1); assert.equal(events.some(e => e.receipt), false);
 });
-test('browser source keeps native API calls and generated-code evaluation out of the UI realm', async () => {
+test('generated code stays out of the UI realm; the official workboard is imported', async () => {
   const ui = await readFile(new URL('../public/demo.mjs', import.meta.url), 'utf8');
+  const bridge = await readFile(new URL('../public/demo-board.mjs', import.meta.url), 'utf8');
   const worker = await readFile(new URL('../public/demo-worker.mjs', import.meta.url), 'utf8');
-  assert.doesNotMatch(ui, /new Function|\beval\(|\/api\/workboard|innerHTML/);
-  assert.match(ui, /import \{ columns, labels \} from '\.\/workboard-model.js'/);
+  assert.doesNotMatch(ui + bridge, /new Function|\beval\(|innerHTML/);
+  assert.match(bridge, /await import\('\.\/workboard.js'\)/);
   assert.match(worker, /gemma-4-E4B-it-web\.litertlm/);
   assert.match(worker, /memoryLimitBytes/); assert.match(worker, /shouldInterrupt/);
 });
