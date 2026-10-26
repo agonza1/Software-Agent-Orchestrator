@@ -1,0 +1,11 @@
+.task-board-button{margin-left:8px}
+.workboard-task-label{margin:10px 20px 0;padding:8px;border-left:3px solid #93cbb2;color:#bbdcca;font-size:11px;overflow-wrap:anywhere}
+.task-board-dialog{width:min(1440px,97vw);height:92vh;max-width:97vw;max-height:94vh;padding:0;border:1px solid #48556b;background:#101725;color:#e3e8f2;overflow:hidden}
+.task-board-dialog[open]{display:flex;flex-direction:column}
+.task-board-top{display:flex;align-items:center;gap:8px;padding:14px 18px;flex-wrap:wrap}
+.task-board-top h2{font-size:17px;margin:0 auto 0 0;font-weight:600}
+.task-board-hint{font-size:11px;color:#aab8ce;margin:0;padding:0 18px 12px}
+.task-board-error{margin:0;padding:10px 18px;font-size:12px;background:#482e26;color:#ffdebc}
+#task-board-frame{flex:1;min-height:0;width:100%;border:0;background:#111820}
+.task-board-dialog::backdrop{background:#050810cc}
+@media(max-width:600px){.task-board-top{padding:10px}.task-board-top h2{flex-basis:100%;font-size:15px}.task-board-top button{font-size:10px}.task-board-hint{padding:0 10px 10px}.task-board-dialog{height:94vh}}

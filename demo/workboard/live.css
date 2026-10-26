@@ -1,0 +1,6 @@
+/* All workboard layout and model styles remain the official generated assets. */
+#access-panel,#sign-out,#private-workspace-hint,#task-github-issue,#task-github-pr {display:none!important}
+label:has(#task-github-issue),label:has(#task-github-pr){display:none}
+.preview-banner{background:#182b27;border-color:#345e4c}
+.preview-banner strong{color:#b6eed3}
+.preview-banner a{display:none}
