@@ -70,7 +70,8 @@ Planner freezes concrete declarative browser checks for review. Coder sees the
 current files and actual failures; Tester independently reviews the actual DOM
 results and may propose extra data-only checks. The host executes them in real
 browser DOMs. It never treats a model's pass flag as evidence. There are at most
-two Coder repair cycles, with raw role responses retained for diagnosis.
+three Coder repair cycles after the initial build (four attempts total), with raw
+role responses retained for diagnosis.
 The first plan and build use short responses without extended reasoning. The
 one Planner correction and bounded Coder repairs enable reasoning with a 4,096
 output-token limit; Tester keeps its original short-response settings. Streaming activity reports elapsed seconds, actual received
@@ -156,8 +157,9 @@ the Rust runtime, or add CI requirements. The SDK/model/WASM versions remain
 pinned; the default web model is pinned at commit
 `e6a3892a8c22cf87ff99583996149cf3cb32452b`. The browser engine context is
 8192 tokens. Coder's first attempt disables extended reasoning and uses up to
-2048 output tokens; its two repair attempts enable reasoning with up to 4096.
-Planner and Tester use up to 2048, with temperature 0.1. Coder's constrained SDK function
+2048 output tokens; its three repair attempts enable reasoning with up to 4096.
+Planner's initial pass and Tester use up to 2048; the single Planner correction
+uses up to 4096. All use temperature 0.1. Coder's constrained SDK function
 declarations return patch/file data only: no tool is executed. Plain-text JSON
 remains a compatibility path, and all proposals pass the same source/browser
 gates. The previous E2B cache entry is retained under its original URL for
