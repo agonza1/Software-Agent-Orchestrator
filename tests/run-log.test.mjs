@@ -58,3 +58,5 @@ test('opening saved error details restores bounded proposals without duplicating
  log.reset('other-task');log.restoreOutputs(t);assert.equal(log.rows.length,0);
  log.observe({...t,plannerResponses:['x'.repeat(7000)]},false);log.restoreOutputs({...t,plannerResponses:['x'.repeat(7000)]});log.restoreOutputs({...t,plannerResponses:['x'.repeat(7000)]});assert.equal(log.rows.length,2);assert.ok(log.rows.at(-1).detail.length<6100);
 });
+
+test('live log counts the initial build and all three repairs',()=>{const {log}=setup();log.observe(task({attempt:4}),true);assert.equal(log.status().title,'Coder · attempt 4/4');});

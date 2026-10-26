@@ -1,3 +1,4 @@
+import {MAX_BUILD_ATTEMPTS} from './page-controller.mjs';
 // Diagnostic only: events never authorize a change or manufacture test evidence.
 const LIMIT = 200;
 const bounded = (value, size = 6000) => {
@@ -32,7 +33,7 @@ export class RunLog {
       // Finished/cancelled work must never leave a ticking diagnostic operation.
       if (!busy && task.status !== 'Active') { this.active.clear(); this.modelStep = null; }
       if (task.status !== 'Active' || !busy) this.summary = `${task.status} · ${task.phase}`;
-      else this.summary = `${task.phase}${task.attempt ? ` · attempt ${task.attempt}/3` : ''}`;
+      else this.summary = `${task.phase}${task.attempt ? ` · attempt ${task.attempt}/${MAX_BUILD_ATTEMPTS}` : ''}`;
       this.emit();
     }
     for (const event of (task.events || []).slice(this.cursor)) {

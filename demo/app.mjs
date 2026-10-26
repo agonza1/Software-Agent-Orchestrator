@@ -2,7 +2,7 @@ import {mountRunLog} from './run-log.mjs';
 import {renderAgents} from './agent-activity.mjs';
 import {DEFAULT_REQUEST,canonicalBundle,validateBundle,canAccept,successfulLiveRun,digest} from './page-contract.mjs';
 import {INITIAL_BUNDLE} from './page-baseline.mjs';
-import {Controller} from './page-controller.mjs';
+import {Controller,MAX_BUILD_ATTEMPTS} from './page-controller.mjs';
 import {createPagePreview,runPageChecks} from './page-runtime.mjs';
 import {LocalModel} from './model.mjs';
 import {load,save} from './storage.mjs';
@@ -30,7 +30,7 @@ function updateControls(){
 function renderBoard(){
  const t=controller.task;$('board').replaceChildren();
  for(const status of ['Backlog','Ready','Active','Review','Done']){const col=text('div','','column'),head=text('div',status,'column-heading'),current=t&&(t.status===status||t.status==='Blocked'&&status==='Active');head.append(text('b',current?'1':'0'));const slot=text('div',current?'App change':'—',`slot${current?' current':''}`);if(current)slot.append(text('small',t.status==='Blocked'?'Blocked':t.phase));col.append(head,slot);$('board').append(col);}
- renderAgents($('agents'),t);$('task-mode').textContent=t?.mode?.toUpperCase()||mode().toUpperCase();$('attempt').textContent=t?.attempt?`Attempt ${t.attempt}/3`:t?.status||'Waiting for a task';$('test-count').textContent=t?.evidence?`${t.evidence.rows.filter(row=>row.pass).length}/${t.evidence.rows.length}`:'—';
+ renderAgents($('agents'),t);$('task-mode').textContent=t?.mode?.toUpperCase()||mode().toUpperCase();$('attempt').textContent=t?.attempt?`Attempt ${t.attempt}/${MAX_BUILD_ATTEMPTS}`:t?.status||'Waiting for a task';$('test-count').textContent=t?.evidence?`${t.evidence.rows.filter(row=>row.pass).length}/${t.evidence.rows.length}`:'—';
 }
 function renderArtifact(){
  const body=$('artifact-body'),t=controller.task;body.replaceChildren();for(const button of document.querySelectorAll('[data-tab]')){button.classList.toggle('selected',button.dataset.tab===tab);button.setAttribute('aria-selected',String(button.dataset.tab===tab));}$('artifact-title').textContent=t?.phase||'Describe your app change';

@@ -173,3 +173,29 @@ test('main demo starts Coder without extended reasoning and reserves it for veri
  const c=await prepared({model:m});await c.run();assert.equal(c.task.status,'Review');assert.equal(c.task.attempt,2);
  assert.deepEqual(calls.filter(c=>c.role==='Coder').map(c=>c.options),[{strategy:'fast-initial',repair:false},{strategy:'fast-initial',repair:true}]);assert.deepEqual(calls.filter(c=>c.role==='Planner').map(c=>c.options),[{repair:false}]);assert.ok(calls.filter(c=>c.role==='Tester').every(c=>c.options===undefined));assert.ok(canAccept(c.task));
 });
+
+
+// The initial build plus three repair cycles must remain bounded on both paths.
+for(const failure of ['edit', 'browser'])for(const succeeds of [true,false])test(`three ${failure} repairs ${succeeds?'can succeed on the fourth build':'stop after the fourth build'}`,async()=>{
+ const calls=[];let builds=0;
+ const m={cancel(){},async generate(role,prompt,options){
+  calls.push({role,prompt,options});
+  if(role==='Planner')return JSON.stringify(PLAN);
+  if(role==='Tester')return JSON.stringify({summary:'Synthetic independent check review.',cases:[]});
+  builds++;
+  if(failure==='edit'&&(!succeeds||builds<4))return JSON.stringify({edits:[{file:'html',find:'Missing exact substring',replace:'After'}]});
+  return JSON.stringify({files:{...REPLACEMENT,css:REPLACEMENT.css+`/* build ${builds} */`}});
+ }};
+ const c=await prepared({model:m,execute:async(bundle,checks)=>{const actual=result(bundle,checks);if(failure==='browser'&&(!succeeds||builds<4))for(const row of actual.rows){row.pass=false;row.actual=['Requested outcome still missing'];}return actual;}});
+ if(succeeds){await c.run();assert.equal(c.task.status,'Review');assert.ok(canAccept(c.task));assert.equal(c.task.events.some(event=>event.text.includes('attempt 4/4')),true);const accepted=await c.accept({base:ORIGINAL});assert.match(accepted.css,/build 4/);assert.equal(c.task.status,'Done');}
+ else{await assert.rejects(()=>c.run(),/3 repair cycles exhausted/);assert.equal(c.task.status,'Blocked');assert.equal(canAccept(c.task),false);await assert.rejects(()=>c.accept({base:ORIGINAL}));}
+ assert.equal(builds,4);assert.equal(c.task.attempt,4);assert.equal(c.task.coderResponses.length,4);
+ assert.deepEqual(calls.filter(call=>call.role==='Coder').map(call=>call.options),[{strategy:'fast-initial',repair:false},...Array.from({length:3},()=>({strategy:'fast-initial',repair:true}))]);
+ assert.ok(calls.filter(call=>call.role==='Coder').slice(1).every(call=>call.prompt.includes('Actual failures:')));
+ assert.equal(c.task.versions.length,failure==='browser'?4:succeeds?1:0);
+});
+test('cancelling the third repair ignores its late model output',async()=>{
+ let builds=0,release,started;const fourth=new Promise(resolve=>started=resolve);
+ const m={cancel(){},async generate(role){if(role==='Planner')return JSON.stringify(PLAN);if(role==='Tester')return JSON.stringify({summary:'Synthetic review.',cases:[]});if(++builds===4){started();return new Promise(resolve=>release=resolve);}return JSON.stringify({edits:[]});}};
+ const c=await prepared({model:m}),pending=c.run();await fourth;c.cancel();release(JSON.stringify({files:REPLACEMENT}));await assert.rejects(()=>pending,/cancelled/);assert.equal(builds,4);assert.equal(c.task.phase,'Cancelled');assert.equal(c.task.candidate,null);assert.equal(canAccept(c.task),false);
+});

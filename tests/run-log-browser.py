@@ -8,6 +8,7 @@ import json
 import pathlib
 import re
 import shutil
+import subprocess
 import tempfile
 from playwright.sync_api import sync_playwright
 
@@ -21,6 +22,8 @@ html = re.sub(r'<meta http-equiv="Content-Security-Policy"[^>]+>', '', html)
 html = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.S)
 html = re.sub(r'<link[^>]*>', '', html)
 source = (ROOT / 'demo/run-log.mjs').read_text().replace('export class ', 'class ').replace('export function ', 'function ').replace('export const ', 'const ')
+attempt_limit = int(subprocess.check_output(['node', '--input-type=module', '-e', "import {MAX_BUILD_ATTEMPTS} from './demo/page-controller.mjs'; console.log(MAX_BUILD_ATTEMPTS);"], cwd=ROOT, text=True))
+source = source.replace("import {MAX_BUILD_ATTEMPTS} from './page-controller.mjs';", f'const MAX_BUILD_ATTEMPTS={attempt_limit};')
 source = source.replace('import.meta.url', json.dumps('https://example.invalid/demo/run-log.mjs'))
 model = (ROOT / 'demo/model.mjs').read_text().replace("import {mountModelLoader} from './model-loader.mjs';", 'const mountModelLoader=()=>()=>{};').replace('export class ', 'class ').replace('export const ', 'const ')
 model = model.replace('import.meta.url', json.dumps('https://example.invalid/demo/model.mjs'))

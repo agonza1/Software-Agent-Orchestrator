@@ -12,7 +12,8 @@ stopping work.
 Generation uses the pinned SDK’s streaming API. Activity reports elapsed time,
 actual received message updates and time without new output. These updates are
 not token counts or completion percentages, and hidden reasoning is never shown.
-The first build uses shorter generation; repairs can use extended reasoning.
+The first build uses shorter generation; up to three repairs can use extended
+reasoning (four build attempts total). The task and live log show the same limit.
 Before the first output, the log says it is waiting. See [README.md](./README.md)
 for the measured performance comparison and fixed deadlines. Logs are
 bounded to 200 entries (6,000 characters of detail each), held only in memory and
