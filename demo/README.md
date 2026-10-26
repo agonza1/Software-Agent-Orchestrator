@@ -13,9 +13,11 @@ preset-based implementation notes.
 ## Run and use
 
 Serve the repository with any static HTTP server and open `demo/` in a compatible
-desktop browser. Python is only a static file server:
+desktop browser. Stage the embedded task board first (Node required for this generation step).
+Python is only a static file server:
 
 ```sh
+node scripts/generate-live-workboard.mjs
 python3 -m http.server 8080 --bind 127.0.0.1
 # Open http://localhost:8080/demo/
 ```
@@ -33,6 +35,12 @@ all three files in **Code**. **Accept change** reruns the reviewed checks before
 promoting the exact bundle. It saves only in this browser. Export workspace
 retains the accepted files, model responses, checks and run history, plus bounded
 local timing and activity counters.
+
+**Tasks** opens an editable official workboard for local tasks, priorities and
+Done-only prerequisites. **Open in builder** uses this same full-app workflow;
+Ready never starts code automatically. See [TASKS.md](./TASKS.md) for scope,
+persistence and the explicit next-ready handoff. The separate read-only
+Developer workboard preview remains available.
 
 **Logs** opens the detailed live activity view without stopping agents. It shows
 role handoffs, real model activity, completed responses and browser checks. See
@@ -123,6 +131,7 @@ Reset retains that legacy export and the model cache.
 ## Verification and publication
 
 ```sh
+node scripts/generate-live-workboard.mjs
 node --test tests/*.test.mjs
 python3 tests/page-workspace-browser.py
 python3 tests/page-recovery-browser.py

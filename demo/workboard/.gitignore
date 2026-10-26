@@ -1,0 +1,4 @@
+# Built from the official preview by scripts/generate-live-workboard.mjs.
+/live.html
+/live-workboard.js
+/live-manifest.json
