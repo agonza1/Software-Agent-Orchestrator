@@ -39,7 +39,7 @@ try:
         browser = p.chromium.launch(executable_path=args.browser, headless=True)
         context = browser.new_context(viewport={'width':1440,'height':1100})
         context.route('https://**/*', lambda route: route.abort())
-        context.route('**/model.mjs', lambda route: route.fulfill(content_type='text/javascript',body=model_fixture))
+        context.route('**/model.mjs*', lambda route: route.fulfill(content_type='text/javascript',body=model_fixture))
         original_runtime = (ROOT/'demo/page-runtime.mjs').read_text()
         context.route('**/page-runtime-original.mjs', lambda route: route.fulfill(content_type='text/javascript',body=original_runtime))
         wrapper = '''import{createPagePreview as create,runPageChecks as run}from'./page-runtime-original.mjs';

@@ -79,8 +79,8 @@ The first plan and build use short responses without extended reasoning. The
 one Planner correction and bounded Coder repairs enable reasoning with a 4,096
 output-token limit; Tester keeps its original short-response settings. Streaming activity reports elapsed seconds, actual received
 updates and time without new output. It never shows invented completion
-percentages or thought text. Each model step still has a fixed three-minute
-deadline; progress does not extend it.
+percentages or thought text. Build has a fixed five-minute deadline; planning and testing each have three
+minutes, and model loading has ten minutes. Progress does not extend these limits.
 
 The check DSL supports arbitrary CSS selectors, click/input/select/key/wait
 steps, and assertions on text, count, value, checked, attribute, visibility and

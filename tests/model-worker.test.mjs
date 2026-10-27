@@ -183,9 +183,9 @@ test('working heartbeats cannot extend the absolute deadline or revive a stopped
   const native=globalThis.setTimeout;let expire,timers=0,delay;
   globalThis.setTimeout=(callback,ms)=>{expire=callback;timers++;delay=ms;return 0};
   try{
-   const generating=model.generate('Coder','Synthetic');const failed=assert.rejects(generating,/3 minutes.*Load Gemma.*Start over/);const old=workers[0];
-   for(const elapsedMs of [1000,90000,179000])old.emit({type:'status',phase:'working',text:'Building',role:'Coder',elapsedMs,receivedChunks:0,outputChars:0,idleMs:null});
-   assert.equal(model.activity.elapsedMs,179000);assert.equal(timers,1);assert.equal(delay,180000);expire();await failed;assert.equal(model.ready,false);assert.equal(model.activity,null);assert.equal(model.pending,null);assert.equal(old.stopped,true);
+   const generating=model.generate('Coder','Synthetic');const failed=assert.rejects(generating,/5 minutes.*Load Gemma.*Start over/);const old=workers[0];
+   for(const elapsedMs of [1000,150000,299000])old.emit({type:'status',phase:'working',text:'Building',role:'Coder',elapsedMs,receivedChunks:0,outputChars:0,idleMs:null});
+   assert.equal(model.activity.elapsedMs,299000);assert.equal(timers,1);assert.equal(delay,300000);expire();await failed;assert.equal(model.ready,false);assert.equal(model.activity,null);assert.equal(model.pending,null);assert.equal(old.stopped,true);
    const retry=model.start();old.emit({type:'status',phase:'working',text:'stale',elapsedMs:999999});old.emit({type:'generated',text:'stale'});assert.equal(model.ready,false);assert.equal(model.activity,null);workers[1].emit({type:'loaded'});await retry;assert.equal(model.ready,true);assert.equal(states.at(-1).phase,'ready');
   }finally{globalThis.setTimeout=native;}
  });
@@ -239,5 +239,21 @@ test('model facade forwards Planner repair and failed correction never leaves th
   const initial=model.generate('Planner','Synthetic first plan',{repair:false});assert.deepEqual(sent.options,{repair:false});workers[0].emit({type:'generated',text:'initial'});await initial;assert.equal(model.ready,true);
   const correction=model.generate('Planner','Synthetic corrected plan',{repair:true});assert.deepEqual(sent.options,{repair:true});assert.equal(sent.role,'Planner');const rejected=assert.rejects(correction,/Synthetic correction failure/);workers[0].emit({error:'Synthetic correction failure',metrics:{role:'Planner',repair:true,outcome:'error'}});await rejected;
   assert.equal(model.ready,false);assert.equal(workers[0].stopped,true);assert.equal(states.at(-1).phase,'error');assert.equal(model.lastMetrics.repair,true);assert.equal(model.lastMetrics.outcome,'error');
+ });
+});
+
+test('role deadlines are fixed at Build five, Planner/Tester three and model loading ten minutes',async()=>{
+ await withWorker(async(model,workers)=>{
+  const originalSet=globalThis.setTimeout,originalClear=globalThis.clearTimeout,scheduled=[],cleared=new Set();let serial=0;
+  globalThis.setTimeout=(callback,ms)=>{const timer={id:++serial,callback,ms};scheduled.push(timer);return timer.id};globalThis.clearTimeout=id=>cleared.add(id);
+  try{
+   const firstLoad=model.start(),loadTimer=scheduled.at(-1);assert.equal(loadTimer.ms,600000);const firstFailure=assert.rejects(firstLoad,/loading in 10 minutes.*Retry loading/);loadTimer.callback();await firstFailure;assert.equal(cleared.has(loadTimer.id),true);assert.equal(model.pending,null);assert.equal(workers.at(-1).stopped,true);
+   for(const [role,ms,minutes]of [['Planner',180000,3],['Coder',300000,5],['Tester',180000,3]]){
+    const load=model.start(),loading=scheduled.at(-1),worker=workers.at(-1);assert.equal(loading.ms,600000);worker.emit({type:'loaded'});await load;assert.equal(cleared.has(loading.id),true);
+    const before=scheduled.length,pending=model.generate(role,'Synthetic deadline proof'),timer=scheduled.at(-1);assert.equal(timer.ms,ms);const failure=assert.rejects(pending,new RegExp(`in ${minutes} minutes.*Load Gemma.*Start over`));
+    for(const elapsedMs of [1000,ms-1000,ms])worker.emit({type:'status',phase:'working',role,text:'Actual heartbeat',elapsedMs,receivedChunks:1});assert.equal(scheduled.length,before+1);assert.equal(model.pending.type,'generate');timer.callback();await failure;
+    assert.equal(cleared.has(timer.id),true);assert.equal(worker.stopped,true);assert.equal(model.pending,null);assert.equal(model.activity,null);assert.equal(model.ready,false);worker.emit({type:'generated',text:'late after deadline',metrics:{outcome:'completed'}});assert.equal(model.ready,false);assert.equal(model.lastMetrics,null);
+   }
+  }finally{globalThis.setTimeout=originalSet;globalThis.clearTimeout=originalClear;}
  });
 });

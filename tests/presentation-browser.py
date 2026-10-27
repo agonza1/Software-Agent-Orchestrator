@@ -40,7 +40,7 @@ export class LocalModel {
 }
 """
 def install(context):
-    context.route('**/model.mjs',lambda route:route.fulfill(content_type='text/javascript',body=MODEL_FIXTURE))
+    context.route('**/model.mjs*',lambda route:route.fulfill(content_type='text/javascript',body=MODEL_FIXTURE))
     context.route('https://**/*',lambda route:route.abort())
     context.add_init_script("""window.__qaScenario='receipt';window.__qaCalls=[];window.__qaDigestWaiting=false;
 const original=crypto.subtle.digest.bind(crypto.subtle);

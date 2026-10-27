@@ -105,7 +105,7 @@ def app_suite(context,todo,todo_checks):
  constructor(onStatus){this.ready=false;this.onStatus=onStatus;}async start(){this.ready=true;this.onStatus('Synthetic QA model boundary — NON_ACCEPTANCE for Gemma');}cancel(){this.ready=false;}
  async generate(role,prompt,options){window.__qaCalls??=[];window.__qaCalls.push({role,prompt,options});const scenario=window.__qaScenario||'todo';if(window.__qaDelayRole===role){window.__qaModelWaiting=true;await new Promise(resolve=>window.__qaReleaseModel=resolve);}if(role==='Planner')return JSON.stringify(scenario==='delayed'?{summary:'Inspect delayed errors',steps:['Build then observe'],checks:[{name:'Delayed fixture',steps:[],assertions:[{selector:'#delayed',property:'text',operator:'equals',expected:'Ready'}]}]}:{summary:'Replace the sample with a reading list app.',steps:['Build the requested complete app.','Check forms, removal and CSS.'],checks:CHECKS});if(role==='Tester')return JSON.stringify({summary:'Review of actually executed browser checks. Synthetic model, not Gemma.',cases:[]});return JSON.stringify({files:scenario==='delayed'?{html:'<main><p id="delayed">Ready</p></main>',css:'',js:'setTimeout(()=>{throw new Error("QA delayed runtime failure")},700)'}:TODO});}
  }""".replace('CHECKS',json.dumps(todo_checks)).replace('TODO',json.dumps(todo))
- context.route('**/model.mjs',lambda route:route.fulfill(content_type='text/javascript',body=model_fixture))
+ context.route('**/model.mjs*',lambda route:route.fulfill(content_type='text/javascript',body=model_fixture))
  page=context.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)));page.goto(URL)
  def persisted():return page.evaluate("async()=>{const{load}=await import('./storage.mjs');return await load()}")
  def app_frame():
