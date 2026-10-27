@@ -31,9 +31,9 @@
       </form>
       <div class="board" id="board" aria-label="Task lifecycle"></div>
       <div class="agent-strip" id="agents"></div>
-      <section class="artifact"><div class="artifact-top"><h3 id="artifact-title">A clear contract comes first</h3><span id="attempt" class="muted">Waiting for a task</span></div>
+      <section class="artifact"><div class="artifact-top"><h3 id="artifact-title">A clear contract comes first</h3><div class="artifact-actions"><span id="attempt" class="muted">Waiting for a task</span><button id="artifact-expand" type="button" class="quiet" aria-label="Expand task details" aria-haspopup="dialog" aria-controls="artifact-dialog" aria-expanded="false">Expand</button></div></div>
         <div class="tabs" role="tablist" aria-label="Task details"><button data-tab="plan" class="selected" role="tab" aria-selected="true">Plan</button><button data-tab="code" role="tab" aria-selected="false">Code</button><button data-tab="tests" role="tab" aria-selected="false">Tests <span id="test-count">—</span></button><button data-tab="activity" role="tab" aria-selected="false">Activity</button></div>
-        <div id="artifact-body" class="artifact-body" role="tabpanel"></div>
+        <div id="artifact-body" class="artifact-body" role="tabpanel" tabindex="0"></div>
       </section>
       <div class="builder-footer"><div><button id="export" class="quiet">Export workspace</button><button id="export-legacy" class="quiet" hidden>Export previous workspace</button></div><div><button id="start-over" class="quiet" hidden>Start over</button><button id="cancel" class="quiet" hidden>Stop</button><button id="run" class="primary" disabled>Approve plan & run</button><button id="accept" class="success" hidden>Accept change</button></div></div>
       <p class="boundary-note">Full HTML, CSS and JavaScript. Local preview only; no repository writes or real payments.</p>
@@ -47,6 +47,10 @@
   </div>
   <footer class="page-footer"><span>Plan, edit and check the complete app in your browser.</span><a href="./how-it-works/">How this demo works</a></footer>
 </main>
+<dialog id="artifact-dialog" class="artifact-dialog" aria-labelledby="artifact-dialog-title">
+  <header class="artifact-dialog-heading"><h2 id="artifact-dialog-title">Task details</h2><button id="artifact-close" type="button" class="quiet" aria-label="Close expanded details" autofocus>Close</button></header>
+  <div id="artifact-dialog-content" class="artifact-dialog-content"></div>
+</dialog>
 
 </body>
 </html>

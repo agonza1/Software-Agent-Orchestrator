@@ -30,7 +30,9 @@ relabeled as full-app evidence.
 
 Describe a change, choose **Create plan**, review the proposed browser checks,
 then **Approve plan & run**. Compare **Candidate** and **Accepted** and inspect
-all three files in **Code**. **Accept change** reruns the reviewed checks before
+all three files in **Code**. **Expand** opens task details across the viewport;
+Plan, Code, Tests and Activity keep updating there. Close it or press Escape to
+return to the workboard without stopping the run. **Accept change** reruns the reviewed checks before
 promoting the exact bundle. It saves only in this browser. Export workspace
 retains the accepted files, model responses, checks and run history, plus bounded
 local timing and activity counters.
