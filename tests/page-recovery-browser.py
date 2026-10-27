@@ -71,6 +71,22 @@ try:
             wait_saved_null()
             assert page.locator('#artifact-title').inner_text()=='Describe your app change'
             assert page.locator('#show-candidate').is_disabled() and page.locator('#accept').is_hidden()
+        # Guided always presents its own runnable example, not a cached custom request.
+        example="Let's add a date in table."
+        page.locator('#mode').select_option('live')
+        page.locator('#request').fill('Make view receipt match the rest of the look and feel.')
+        page.locator('#mode').select_option('guided')
+        expect(page.locator('#request')).to_have_value(example)
+        page.locator('#plan').click();page.wait_for_function("()=>!document.querySelector('#run').disabled")
+        guided=stored()
+        assert guided['task']['mode']=='guided' and guided['task']['request']==example
+        # A legacy mismatched Guided task cannot remain runnable behind the default prompt.
+        guided['task']['request']='Cached unrelated custom request'
+        page.evaluate("async value=>{const{save}=await import('./storage.mjs');await save(value)}",guided)
+        page.reload();ready()
+        expect(page.locator('#request')).to_have_value(example)
+        assert page.locator('#artifact-title').inner_text()=='Describe your app change'
+        assert page.locator('#run').is_disabled()
         live();plan();page.locator('#run').click();page.wait_for_function("()=>!document.querySelector('#accept').hidden&&!document.querySelector('#accept').disabled")
         page.locator('#accept').click();page.wait_for_function("()=>document.querySelector('#artifact-title').textContent==='Accepted locally'")
         page.wait_for_function("async()=>{const{load}=await import('./storage.mjs');const s=await load();return s?.task?.status==='Done'&&s.acceptedStorage.accepted==='saved'}")
@@ -85,6 +101,16 @@ try:
             assert value['accepted']==baseline['accepted'] and value['acceptedStorage']==baseline['acceptedStorage'], value
             assert value['history']==baseline['history'], value
             return value
+        # Live restores its own request; Recorded Start over without a loaded model lands in Guided.
+        page.reload();page.wait_for_function("()=>document.querySelector('#artifact-title').textContent==='Accepted locally'")
+        expect(page.locator('#request')).to_have_value(baseline['task']['request'])
+        assert page.locator('#mode').input_value()=='live'
+        page.locator('#mode').select_option('recorded')
+        page.wait_for_function("()=>document.querySelector('#task-mode').textContent==='RECORDED'")
+        expect(page.locator('#request')).to_have_value(baseline['task']['request'])
+        start_over();expect(page.locator('#request')).to_have_value(example)
+        assert page.locator('#mode').input_value()=='guided'
+        unchanged();live()
         # Pending Planner can be abandoned without a stale rejection replacing the notice.
         page.evaluate("window.__holdRole='Planner'")
         page.locator('#request').fill('Plan a request that will be restarted.')
@@ -147,7 +173,7 @@ try:
         page.evaluate('window.__badPlan=false');plan('A valid request after the blocked plan.')
         # Leaving an in-flight Recorded verification cannot post an obsolete error.
         page.evaluate('window.__holdBrowser=true');page.locator('#mode').select_option('recorded');page.wait_for_function("()=>typeof window.__releaseBrowser==='function'")
-        page.locator('#mode').select_option('guided');page.locator('#request').fill('A new request after leaving Recorded.')
+        page.locator('#mode').select_option('guided');expect(page.locator('#request')).to_have_value(example);page.locator('#request').fill('A new request after leaving Recorded.')
         page.evaluate('window.__holdBrowser=false;window.__releaseBrowser()');page.wait_for_timeout(100)
         assert page.locator('#notice').is_hidden() and page.locator('#artifact-title').inner_text()=='Describe your app change'
         assert page.locator('#request').is_enabled()
@@ -156,7 +182,7 @@ try:
         page.evaluate("window.__holdRole='Coder'");page.locator('#run').click();page.wait_for_function("()=>window.__held?.length===1")
         page.wait_for_function("async()=>{const{load}=await import('./storage.mjs');return(await load())?.task?.status==='Active'}")
         page.reload();page.wait_for_function("()=>document.querySelector('#artifact-title').textContent==='Interrupted by reload'")
-        assert 'interrupted' in page.locator('#artifact-body').inner_text();start_over();unchanged()
+        assert 'interrupted' in page.locator('#artifact-body').inner_text();expect(page.locator('#request')).to_have_value('A valid request before the reload check.');start_over();unchanged()
         # A previously completed workspace can be restarted during fresh restore verification.
         page.evaluate("async value=>{const{save}=await import('./storage.mjs');await save(value)}",baseline)
         page.add_init_script('window.__holdBrowser=true')
@@ -177,7 +203,7 @@ try:
         page.evaluate('window.__held[0].reject(Error("OLD RESET BUILD"))');page.wait_for_timeout(80)
         assert 'OLD RESET' not in page.locator('#notice').inner_text() and page.locator('#request').is_enabled()
         assert not errors, errors
-        report.update(passed=True,baseline_history=len(baseline['history']),accepted_preserved=True,scenarios=['active Planner restart + late rejection','active Build restart + late model/preview/window messages','new valid plan after restart','blocked actual plan error + idle model preservation','leave Recorded while verification is pending','reload interrupted Build','restart during saved workspace verification','model loading restart + late completion','active Reset demo + late Build rejection','RunLog modal completion + restart reset + old-callback fences'],pageerrors=errors)
+        report.update(passed=True,baseline_history=len(baseline['history']),accepted_preserved=True,scenarios=['Guided prompt selection + mismatched saved Guided task', 'Live request reload + Recorded Start over to Guided', 'active Planner restart + late rejection','active Build restart + late model/preview/window messages','new valid plan after restart','blocked actual plan error + idle model preservation','leave Recorded while verification is pending','reload interrupted Build','restart during saved workspace verification','model loading restart + late completion','active Reset demo + late Build rejection','RunLog modal completion + restart reset + old-callback fences'],pageerrors=errors)
         if args.output:
             args.output.parent.mkdir(parents=True,exist_ok=True)
             args.output.write_text(json.dumps(report,indent=2)+'\n')

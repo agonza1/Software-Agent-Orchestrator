@@ -21,6 +21,7 @@ python3 -m http.server 8080 --bind 127.0.0.1
 ```
 
 Guided is an explicitly scripted date-column example with actual browser checks.
+Choosing Guided fills the request with that example; choose Live for a custom request.
 Live loads Gemma 4 E4B on WebGPU: approximately 3 GB on first download, then the
 browser's origin-specific model cache. It requires no Rust backend, Ollama, API
 key or paid provider call. Recorded reviews a successful Live full-app run saved
