@@ -31,7 +31,7 @@ export class LocalModel {
   }
   generate(role, prompt, options = {}) {
     if (!this.ready) throw Error('Load the local model first.');
-    return this.call('generate', {role, prompt, options}, 180000);
+    return this.call('generate', {role, prompt, options}, role === 'Coder' ? 300000 : 180000);
   }
   async call(type, payload, timeout) {
     if (this.pending) throw Error('The shared model is already busy.');
@@ -77,7 +77,7 @@ export class LocalModel {
       };
     }
     return new Promise((resolve, reject) => {
-      const deadlineMessage = type === 'load' ? 'Gemma did not finish loading in 10 minutes. Retry loading; its downloaded files are kept.' : 'Gemma did not finish this step in 3 minutes. Load Gemma again, then choose Start over. Its download is kept.';
+      const deadlineMessage = type === 'load' ? 'Gemma did not finish loading in 10 minutes. Retry loading; its downloaded files are kept.' : payload.role === 'Coder' ? 'Gemma did not finish the build in 5 minutes. Load Gemma again, then choose Start over. Its download is kept.' : 'Gemma did not finish this step in 3 minutes. Load Gemma again, then choose Start over. Its download is kept.';
       const timer = setTimeout(() => this.cancel(deadlineMessage, 'error'), timeout);
       this.pending = {type, resolve, reject, timer};
       this.emitActivity({type:'start',operation:type,role:payload.role||'Model',inputChars:payload.prompt?.length||0});

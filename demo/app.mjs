@@ -4,7 +4,7 @@ import {DEFAULT_REQUEST,canonicalBundle,validateBundle,canAccept,successfulLiveR
 import {INITIAL_BUNDLE} from './page-baseline.mjs';
 import {Controller,MAX_BUILD_ATTEMPTS} from './page-controller.mjs';
 import {createPagePreview,runPageChecks} from './page-runtime.mjs';
-import {LocalModel} from './model.mjs';
+import {LocalModel} from './model.mjs?v=gemma-build-5m-1';
 import {load,save} from './storage.mjs';
 const $=id=>document.getElementById(id);
 const text=(tag,content,className='')=>{const node=document.createElement(tag);node.textContent=content;if(className)node.className=className;return node;};
