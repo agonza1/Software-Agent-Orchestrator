@@ -1,10 +1,13 @@
 import {validateChecks} from './page-checks.mjs';
 const PREVIEW_URL=new URL('./preview/index.html',import.meta.url);
-export async function createPagePreview(container,bundle,{signal,storage={},onStorage=()=>{},onError=()=>{},timeout=15000}={}){
+const RESTRICTED_URL=new URL('./preview/restricted.html',import.meta.url);
+export async function createPagePreview(container,bundle,{signal,storage={},onStorage=()=>{},onError=()=>{},timeout=15000,network='standard'}={}){
+  if(!['standard','restricted'].includes(network))throw new Error('Unknown preview network policy.');
   if(signal?.aborted)throw new DOMException('Cancelled','AbortError');
   if(!container?.append||!bundle||['html','css','js'].some(key=>typeof bundle[key]!=='string'))throw new Error('Preview needs HTML, CSS and JavaScript strings.');
-  const iframe=document.createElement('iframe');iframe.setAttribute('sandbox','allow-scripts allow-forms');iframe.setAttribute('title','Application preview');iframe.style.cssText='width:100%;height:100%;border:0;display:block;background:white';iframe.referrerPolicy='no-referrer';
-  const token=crypto.randomUUID();iframe.src=PREVIEW_URL.href+'?preview-token='+token;
+  const iframe=document.createElement('iframe');iframe.setAttribute('sandbox',network==='restricted'?'allow-scripts':'allow-scripts allow-forms');iframe.setAttribute('title','Application preview');iframe.style.cssText='width:100%;height:100%;border:0;display:block;background:white';iframe.referrerPolicy='no-referrer';
+  const token=crypto.randomUUID();iframe.src=(network==='restricted'?RESTRICTED_URL:PREVIEW_URL).href+'?preview-token='+token;
+  iframe.setAttribute('allow',"camera 'none'; microphone 'none'; geolocation 'none'; payment 'none'; usb 'none'");
   let disposed=false,initialized=false,loads=0,port,sequence=0,pending=new Map(),bootReject;
   const destroy=()=>{if(disposed)return;disposed=true;window.removeEventListener('message',boot);signal?.removeEventListener('abort',abort);port?.close();iframe.remove();for(const {reject,timer} of pending.values()){clearTimeout(timer);reject(new Error('Preview closed.'));}pending.clear();bootReject?.(new Error('Preview closed.'));};
   iframe.addEventListener('load',()=>{loads++;if(initialized||loads>1){onError('The app navigated away from its preview.');destroy();}});

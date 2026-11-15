@@ -1,14 +1,16 @@
+import {mountWorkshop} from './workshop-ui.mjs';
 import {mountRunLog} from './run-log.mjs';
 import {renderAgents} from './agent-activity.mjs';
 import {DEFAULT_REQUEST,canonicalBundle,validateBundle,canAccept,successfulLiveRun,digest} from './page-contract.mjs';
 import {INITIAL_BUNDLE} from './page-baseline.mjs';
-import {Controller,MAX_BUILD_ATTEMPTS} from './page-controller.mjs';
+import {Controller,MAX_BUILD_ATTEMPTS} from './workshop-controller.mjs';
 import {createPagePreview,runPageChecks} from './page-runtime.mjs';
 import {LocalModel} from './model.mjs?v=gemma-build-5m-1';
 import {load,save} from './storage.mjs';
 const $=id=>document.getElementById(id);
 const text=(tag,content,className='')=>{const node=document.createElement(tag);node.textContent=content;if(className)node.className=className;return node;};
 let accepted=structuredClone(INITIAL_BUNDLE),acceptedStorage={},history=[],legacy=null,tab='plan',preview='accepted',saveQueue=Promise.resolve(),loading=false,previewEpoch=0,previewKey='',previewHandle=null,previewAbort=null,acceptedGeneration=0,candidateSession=null,uiEpoch=0;
+let workshop=null,workshopReady=false,acceptedNetwork='restricted';
 const runLog=mountRunLog();
 const artifact=document.querySelector('.artifact'),artifactDialog=$('artifact-dialog'),artifactAnchor=document.createComment('Task details position');
 artifact.before(artifactAnchor);
@@ -18,17 +20,24 @@ $('artifact-close').onclick=()=>artifactDialog.close();
 artifactDialog.addEventListener('close',()=>{artifactAnchor.after(artifact);document.body.classList.remove('artifact-expanded');$('artifact-expand').setAttribute('aria-expanded','false');window.scrollTo(artifactScroll.x,artifactScroll.y);$('artifact-expand').focus({preventScroll:true});});
 const model=new LocalModel(value=>{$('model-status').textContent=value;updateControls();},undefined,event=>runLog.model(event));
 const controller=new Controller({model,execute:(bundle,checks,options)=>{runLog.observe(controller.task,controller.busy);return runLog.checks(runPageChecks,bundle,checks,options);},onChange:()=>{render();persist();}});
+workshop=mountWorkshop({
+ state:()=>({task:controller.task,busy:controller.busy||loading||!workshopReady,mode:mode(),accepted,acceptedNetwork}),
+ changed:()=>persist(),notify:message=>notice(message,true),execute:runPageChecks,createPreview:createPagePreview,
+ suggest:request=>{if(controller.busy||loading||!workshopReady)return;$('mode').value='live';syncModeContent();$('request').value=request;$('request').dispatchEvent(new Event('input'));$('request').focus();},
+ settingsChanged:settings=>{if(controller.busy||loading)return;acceptedNetwork=settings.network;uiEpoch++;discardPreview();controller.restart();render();persist();},
+ revise:feedback=>safely(async()=>{preview='accepted';candidateSession=null;tab='plan';await controller.revisePlan(feedback);}),
+});
 function notice(message='',error=false){$('notice-message').textContent=message;$('notice').hidden=!message;$('notice-details').hidden=!message||!error;}
 function openErrorLog(event){if(controller.task?.status==='Blocked')runLog.restoreOutputs(controller.task);runLog.open({details:true,trigger:event.currentTarget});}
 $('notice-details').onclick=openErrorLog;
 function errorLogButton(){const button=text('button','View error log','quiet error-details');button.type='button';button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-controls','run-log-dialog');button.onclick=openErrorLog;return button;}
 function mode(){return $('mode').value;}
-function persist(){const value=structuredClone({schema:3,accepted,acceptedStorage,task:controller.task,history:history.slice(-5),legacy,layout:$('workspace').classList.contains('stacked')});saveQueue=saveQueue.catch(()=>{}).then(()=>save(value)).catch(()=>notice('Browser storage is unavailable. Export your workspace before closing.'));}
+function persist(){if(!workshopReady)return;const value=structuredClone({schema:3,accepted,acceptedStorage,task:controller.task,history:history.slice(-5),legacy,workshop:workshop?.export(),acceptedNetwork,layout:$('workspace').classList.contains('stacked')});saveQueue=saveQueue.catch(()=>{}).then(()=>save(value)).catch(()=>notice('Browser storage is unavailable. Export your workspace before closing.'));}
 function updateControls(){
- const t=controller.task,busy=controller.busy||loading;
+ const t=controller.task,busy=controller.busy||loading||!workshopReady||workshop?.rehearsing;
  for(const id of ['request','mode','model-file'])$(id).disabled=busy;
  $('request').disabled=busy||mode()==='recorded';$('plan').disabled=busy||mode()==='recorded'||mode()==='live'&&!model.ready;
- $('run').disabled=busy||t?.status!=='Ready'||t.mode!==mode();$('run').hidden=['Review','Done'].includes(t?.status);
+ $('run').disabled=busy||t?.workshopPending||t?.status!=='Ready'||t.mode!==mode();$('run').hidden=['Review','Done'].includes(t?.status);
  $('accept').hidden=t?.status!=='Review'||mode()==='recorded';$('accept').disabled=busy||!canAccept(t);
  $('cancel').hidden=!busy;$('start-over').hidden=!t&&!loading;$('start-over').disabled=false;$('reset').disabled=false;$('export').disabled=false;$('load-model').disabled=busy||model.ready;
  $('show-candidate').disabled=!t?.candidate||!['Review','Done'].includes(t.status);$('export-legacy').hidden=!legacy;
@@ -48,20 +57,20 @@ function renderArtifact(){
  else for(const event of t.events){const row=text('div','','activity-entry');row.append(text('strong',event.role),text('small',new Date(event.at).toLocaleTimeString()),text('div',event.text));body.append(row);}
 }
 async function renderPreview(){
- const t=controller.task,role=preview,bundle=role==='candidate'&&t?.candidate?t.candidate:accepted,source=canonicalBundle(bundle),identity=role==='candidate'?`${t?.id}:${t?.hash}`:`accepted:${acceptedGeneration}`,key=role+'|'+identity+'|'+source;
+ const t=controller.task,role=preview,bundle=role==='candidate'&&t?.candidate?t.candidate:accepted,source=canonicalBundle(bundle),network=role==='candidate'?(t?.plan?.workshop?.network||'standard'):acceptedNetwork,identity=role==='candidate'?`${t?.id}:${t?.hash}`:`accepted:${acceptedGeneration}`,key=role+'|'+network+'|'+identity+'|'+source;
  $('show-accepted').classList.toggle('selected',role==='accepted');$('show-candidate').classList.toggle('selected',role==='candidate');$('show-accepted').setAttribute('aria-pressed',String(role==='accepted'));$('show-candidate').setAttribute('aria-pressed',String(role==='candidate'));$('preview-status').textContent=role==='candidate'?'Candidate · not yet accepted':'Accepted app · local only';
  if(key===previewKey)return;const epoch=++previewEpoch;previewKey=key;previewHandle?.destroy();previewHandle=null;previewAbort?.abort();previewAbort=new AbortController();
  if(role==='candidate'&&candidateSession?.identity!==identity)candidateSession={identity,storage:structuredClone(t?.previewStorage||acceptedStorage)};
  const storage=structuredClone(role==='accepted'?acceptedStorage:candidateSession.storage),current=()=>epoch===previewEpoch&&key===previewKey;
- try{const handle=await createPagePreview($('app-preview'),bundle,{storage,signal:previewAbort.signal,onStorage:value=>{if(!current())return;if(role==='accepted'&&source===canonicalBundle(accepted)){acceptedStorage=value;persist();}else if(role==='candidate'&&candidateSession?.identity===identity)candidateSession.storage=value;},onError:error=>{if(!current())return;const message=`App preview: ${String(error.message||error)}`;notice(message,true);if(role==='candidate'&&t===controller.task&&source===canonicalBundle(t.candidate)&&['Review','Done'].includes(t.status)){history=history.filter(run=>run.id!==t.id||run.hash!==t.hash);controller.block(Error(message));preview='accepted';void renderPreview();}}});if(!current()){handle.destroy();return;}previewHandle=handle;}
+ try{const handle=await createPagePreview($('app-preview'),bundle,{network,storage,signal:previewAbort.signal,onStorage:value=>{if(!current())return;if(role==='accepted'&&source===canonicalBundle(accepted)){acceptedStorage=value;persist();}else if(role==='candidate'&&candidateSession?.identity===identity)candidateSession.storage=value;},onError:error=>{if(!current())return;const message=`App preview: ${String(error.message||error)}`;notice(message,true);if(role==='candidate'&&t===controller.task&&source===canonicalBundle(t.candidate)&&['Review','Done'].includes(t.status)){history=history.filter(run=>run.id!==t.id||run.hash!==t.hash);controller.block(Error(message));preview='accepted';void renderPreview();}}});if(!current()){handle.destroy();return;}previewHandle=handle;}
  catch(error){if(current()){previewKey='';notice(`App preview could not load: ${error.message}`,true);if(role==='candidate'&&t===controller.task&&['Review','Done'].includes(t.status)){history=history.filter(run=>run.id!==t.id||run.hash!==t.hash);controller.block(error);preview='accepted';void renderPreview();}}}
 }
-function render(){runLog.observe(controller.task,controller.busy);renderBoard();renderArtifact();updateControls();void renderPreview();}
+function render(){workshop?.refresh();runLog.observe(controller.task,controller.busy);renderBoard();renderArtifact();updateControls();void renderPreview();}
 async function safely(action){const epoch=uiEpoch;notice();try{await action(epoch);}catch(error){if(epoch===uiEpoch)notice(String(error.message||error),true);}finally{if(epoch===uiEpoch)render();}}
-$('request-form').onsubmit=event=>{event.preventDefault();safely(async()=>{preview='accepted';candidateSession=null;tab='plan';await controller.plan({request:$('request').value,mode:mode(),base:accepted});});};
+$('request-form').onsubmit=event=>{event.preventDefault();safely(async()=>{preview='accepted';candidateSession=null;tab='plan';await controller.plan({request:$('request').value,mode:mode(),base:accepted,workshop:workshop.settings});});};
 $('request').oninput=()=>{if(controller.busy||mode()==='recorded')return;notice();uiEpoch++;controller.epoch++;controller.abort?.abort();controller.task=null;preview='accepted';render();persist();};
 $('run').onclick=()=>safely(async()=>{const t=await controller.run();if(t!==controller.task||!canAccept(t))return;t.previewStorage=structuredClone(acceptedStorage);preview='candidate';candidateSession=null;tab='tests';if(successfulLiveRun(t))history.push(structuredClone(t));persist();});
-$('accept').onclick=()=>safely(async()=>{const t=controller.task;const bundle=await controller.accept({base:accepted});if(t!==controller.task||t.status!=='Done')throw Error('The task changed; nothing accepted.');accepted=bundle;if(candidateSession?.identity===`${t.id}:${t.hash}`)acceptedStorage=structuredClone(candidateSession.storage);acceptedGeneration++;candidateSession=null;preview='accepted';if(t.mode==='live')history.push(structuredClone(t));persist();notice('Change accepted locally. The app is now running the tested HTML, CSS and JavaScript.');});
+$('accept').onclick=()=>safely(async()=>{const t=controller.task;const bundle=await controller.accept({base:accepted});if(t!==controller.task||t.status!=='Done')throw Error('The task changed; nothing accepted.');accepted=bundle;acceptedNetwork=t.plan?.workshop?.network||'standard';if(candidateSession?.identity===`${t.id}:${t.hash}`)acceptedStorage=structuredClone(candidateSession.storage);acceptedGeneration++;candidateSession=null;preview='accepted';if(t.mode==='live')history.push(structuredClone(t));persist();notice('Change accepted locally. The app is now running the tested HTML, CSS and JavaScript.');});
 function discardPreview(){previewEpoch++;previewKey='';previewAbort?.abort();previewAbort=null;previewHandle?.destroy();previewHandle=null;candidateSession=null;preview='accepted';}
 function recoveryMessage(){return mode()==='live'&&!model.ready?'Ready for a new request. Click Load Gemma to resume from the browser cache.':'Ready for a new request. Your accepted app and saved successful runs are unchanged.';}
 function startOver(){uiEpoch++;loading=false;discardPreview();controller.restart();tab='plan';if(mode()==='recorded')$('mode').value=model.ready?'live':'guided';syncModeContent();render();persist();notice(recoveryMessage());$('request').focus();}
@@ -79,17 +88,17 @@ for(const [index,button]of artifactTabs.entries()){
  button.onkeydown=event=>{let next;if(event.key==='ArrowRight')next=(index+1)%artifactTabs.length;else if(event.key==='ArrowLeft')next=(index+artifactTabs.length-1)%artifactTabs.length;else if(event.key==='Home')next=0;else if(event.key==='End')next=artifactTabs.length-1;else return;event.preventDefault();artifactTabs[next].click();artifactTabs[next].focus();};
 }
 function download(value,name){const blob=new Blob([JSON.stringify(value,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-$('export').onclick=()=>download({schema:3,exportedAt:new Date().toISOString(),accepted,acceptedStorage,task:controller.task,history,legacy,modelMetrics:model.metrics||[],modelActivity:model.activity||null},'agent-demo-workspace.json');
+$('export').onclick=()=>download({schema:3,exportedAt:new Date().toISOString(),accepted,acceptedStorage,task:controller.task,history,legacy,workshop:workshop.export(),acceptedNetwork,modelMetrics:model.metrics||[],modelActivity:model.activity||null},'agent-demo-workspace.json');
 $('export-legacy').onclick=()=>download(legacy,'previous-agent-demo-workspace.json');
 function layout(stacked){$('workspace').classList.toggle('stacked',stacked);$('layout').textContent=stacked?'◫ Side by side':'▤ Top / bottom';$('layout').setAttribute('aria-label',stacked?'Switch to side by side layout':'Switch to top and bottom layout');$('divider').setAttribute('aria-orientation',stacked?'horizontal':'vertical');persist();}
 $('layout').onclick=()=>layout(!$('workspace').classList.contains('stacked'));
 let split=48;function resize(value){split=Math.max(30,Math.min(70,value));$('workspace').style.setProperty('--split',`${split}%`);$('divider').setAttribute('aria-valuenow',String(Math.round(split)));}
 $('divider').onpointerdown=event=>{event.preventDefault();const divider=$('divider');divider.setPointerCapture(event.pointerId);divider.onpointermove=e=>{const rect=$('workspace').getBoundingClientRect();resize($('workspace').classList.contains('stacked')?(e.clientY-rect.top)/rect.height*100:(e.clientX-rect.left)/rect.width*100);};divider.onpointerup=()=>{divider.onpointermove=null;divider.onpointerup=null;};};
 $('divider').onkeydown=event=>{if(['ArrowLeft','ArrowUp','ArrowRight','ArrowDown'].includes(event.key)){event.preventDefault();resize(split+(['ArrowLeft','ArrowUp'].includes(event.key)?-2:2));}};
-$('reset').onclick=()=>{if(!confirm('Reset the sample app and clear its saved runs? Your downloaded model will stay cached.'))return;uiEpoch++;loading=false;discardPreview();controller.restart();accepted=structuredClone(INITIAL_BUNDLE);acceptedStorage={};acceptedGeneration++;history=[];tab='plan';$('request').value=DEFAULT_REQUEST;if(mode()==='recorded')$('mode').value='guided';syncModeContent();render();persist();notice('Sample app reset. '+(mode()==='live'&&!model.ready?'Click Load Gemma to resume from the browser cache.':'Enter a request to begin.'));};
+$('reset').onclick=()=>{if(!confirm('Reset the sample app, workshop checkpoints and saved runs? Your downloaded model will stay cached.'))return;workshop.reset();acceptedNetwork='restricted';uiEpoch++;loading=false;discardPreview();controller.restart();accepted=structuredClone(INITIAL_BUNDLE);acceptedStorage={};acceptedGeneration++;history=[];tab='plan';$('request').value=DEFAULT_REQUEST;if(mode()==='recorded')$('mode').value='guided';syncModeContent();render();persist();notice('Sample app reset. '+(mode()==='live'&&!model.ready?'Click Load Gemma to resume from the browser cache.':'Enter a request to begin.'));};
 const restoreEpoch=uiEpoch;
 try{const stored=await load();if(restoreEpoch!==uiEpoch)throw Error('Saved workspace loading was cancelled.');
- if(stored?.schema===3){accepted=validateBundle(stored.accepted);acceptedStorage=stored.acceptedStorage||{};legacy=stored.legacy||null;history=(stored.history||[]).filter(successfulLiveRun).slice(-5);
+ if(stored?.schema===3){try{await workshop.restore(stored.workshop);}catch(error){notice(`Workshop checkpoints need attention: ${error.message} The original workshop data is retained in Export workspace.`,true);}if(restoreEpoch!==uiEpoch)throw Error('Saved workshop loading was cancelled.');acceptedNetwork=stored.acceptedNetwork==='restricted'?'restricted':'standard';accepted=validateBundle(stored.accepted);acceptedStorage=stored.acceptedStorage||{};legacy=stored.legacy||null;history=(stored.history||[]).filter(successfulLiveRun).slice(-5);
   if(stored.task?.kind==='workspace'){
    $('mode').value=stored.task.mode;
    if(stored.task.mode==='guided'&&stored.task.request!==DEFAULT_REQUEST){controller.task=null;syncModeContent();persist();}
@@ -98,4 +107,4 @@ try{const stored=await load();if(restoreEpoch!==uiEpoch)throw Error('Saved works
   if(stored.layout)layout(true);
  }else if(stored){legacy=stored;notice('Your previous demo workspace is preserved for export below. This new full-app workspace starts with the sample app; previous checks cannot approve it.');persist();}
 }catch(error){if(restoreEpoch===uiEpoch){loading=false;if(controller.task)controller.block(error);notice(`Saved workspace needs attention: ${error.message}. Choose Start over to try a new request, or export it before resetting.`,true);}}
-render();
+workshopReady=true;render();
